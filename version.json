@@ -1,0 +1,14 @@
+{
+  "version": "1.9.0",
+  "min_version": "1.8.0",
+  "download_url": "https://github.com/yourname/Y2Tool/releases/download/v1.9.0/Y2订单处理辅助工具1.9.zip",
+  "changelog": [
+    "新增远程自动更新功能",
+    "优化图片处理性能",
+    "修复已知问题",
+    "改进用户体验"
+  ],
+  "force_update": false,
+  "file_size": 0,
+  "hash": "sha256:"
+}

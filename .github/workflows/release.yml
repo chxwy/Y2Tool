@@ -1,0 +1,116 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如: 1.9.1)'
+        required: true
+        default: '1.9.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller pillow openpyxl requests pandas tkinterdnd2 psutil
+    
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller "Y2订单处理辅助工具1.9.spec" --clean
+    
+    - name: Create ZIP archive
+      run: |
+        cd dist
+        7z a -tzip "Y2订单处理辅助工具${{ github.ref_name || github.event.inputs.version }}.zip" "Y2订单处理辅助工具1.9"
+        cd ..
+    
+    - name: Calculate SHA256
+      id: sha256
+      run: |
+        $hash = Get-FileHash -Path "dist\Y2订单处理辅助工具${{ github.ref_name || github.event.inputs.version }}.zip" -Algorithm SHA256
+        Write-Output "hash=$($hash.Hash)" >> $env:GITHUB_OUTPUT
+    
+    - name: Get file size
+      id: filesize
+      run: |
+        $size = (Get-Item "dist\Y2订单处理辅助工具${{ github.ref_name || github.event.inputs.version }}.zip").Length
+        Write-Output "size=$size" >> $env:GITHUB_OUTPUT
+    
+    - name: Generate version.json
+      run: |
+        $version = "${{ github.ref_name || github.event.inputs.version }}"
+        $version = $version -replace '^v', ''
+        
+        $json = @{
+          version = $version
+          min_version = "1.8.0"
+          download_url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name || github.event.inputs.version }}/Y2订单处理辅助工具${{ github.ref_name || github.event.inputs.version }}.zip"
+          changelog = @("自动构建发布")
+          force_update = $false
+          file_size = [int]"${{ steps.filesize.outputs.size }}"
+          hash = "sha256:${{ steps.sha256.outputs.hash }}"
+          release_date = Get-Date -Format "yyyy-MM-dd"
+        } | ConvertTo-Json -Depth 10
+        
+        $json | Out-File -FilePath "dist\version.json" -Encoding UTF8
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-files
+        path: |
+          dist/*.zip
+          dist/version.json
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: release-files
+        path: dist
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/*.zip
+          dist/version.json
+        generate_release_notes: true
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Update version.json in repository
+      run: |
+        mkdir -p docs
+        cp dist/version.json docs/version.json
+        
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add docs/version.json
+        git diff --staged --quiet || git commit -m "Update version.json for ${{ github.ref_name || github.event.inputs.version }}"
+        git push
+      continue-on-error: true
